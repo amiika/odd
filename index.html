@@ -35,13 +35,13 @@
         
         header { border-bottom: 2px solid var(--text); padding-bottom: 20px; margin-bottom: 40px; display: flex; justify-content: space-between; align-items: center; }
         
-        h1, h2, h3, h4 { margin: 0; letter-spacing: 1px; font-family: var(--header-font); }
-        h1 { font-size: 1.5em; }
+        h1 { margin: 0; letter-spacing: 1px; font-family: var(--header-font); font-size: 1.5em; cursor: pointer; }
+
+        h2, h3, h4 { margin: 0; letter-spacing: 1px; font-family: var(--header-font); }
 
         button { background: transparent; border: 1px solid var(--dim-text); color: var(--text); padding: 5px 15px; cursor: pointer; font-family: inherit; font-size: 12px; text-transform: uppercase; }
         button:hover { background: var(--btn-hover); }
 
-        /* --- CSS COUNTERS & LIST STYLES --- */
         .tutorial-list { 
             list-style: none; 
             padding: 0; 
@@ -57,7 +57,6 @@
 
         /* The Number */
         .tutorial-list li::before {
-            /* "0" + counter handles the leading zero logic for single digits */
             content: "0" counter(tut-counter) ;  
             color: var(--dim-text);
             margin-right: 15px;
@@ -65,7 +64,6 @@
             font-family: monospace;
         }
 
-        /* The Title (Pushes desc to right) */
         .file-name { 
             font-weight: bold; 
             cursor: pointer; 
@@ -85,7 +83,7 @@
 
 <main>
     <header>
-        <h1 id="page-title">ODD TUTORIALS</h1>
+        <h1 id="page-title" onclick="showIndex()">ODD TUTORIALS</h1>
         <button id="theme-toggle">[ LIGHT MODE ]</button>
     </header>
 

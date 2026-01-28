@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FZRTH - 0005</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        :root { --bg: #111; --fg: #888; --hl: #fb0; --cur: #fff; }
+        body { background: var(--bg); color: var(--fg); font-family: monospace; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        .header { font-size: 24px; padding: 15px; border-bottom: 1px solid #333; background: #000; color: var(--hl); }
+        .container { position: relative; flex: 1; display: flex; }
+        #editor, #highlight { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            padding: 20px; font-size: 20px; line-height: 1.5;
+            white-space: pre-wrap; word-wrap: break-word;
+            box-sizing: border-box; border: none; outline: none; margin: 0;
+            font-family: 'Courier New', monospace;
+        }
+        #editor { background: transparent; color: transparent; caret-color: var(--cur); z-index: 2; resize: none; }
+        #highlight { z-index: 1; pointer-events: none; }
+        .active { color: var(--hl); text-shadow: 0 0 8px var(--hl); font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">FZRTH</div>
+    <div class="container">
+        <div id="highlight"></div>
+        <textarea id="editor" spellcheck="false">
+120 bpm
+: modulator
+  t [ 500 24 6040 34 12 300 ] * <33 424 24 4244> / sin 130 * ;
+
+: carrier
+  time [ 45 8444 333 ] * 89904 / sin <84 10 24> * ;
+
+: oompah
+  beat <33434 543 23444> * sin 100 * ;
+
+: glitch
+  modulator carrier + oompah *
+  raw ;
+
+glitch</textarea>
+    </div>
+
+<script>
+    const ed = document.getElementById('editor');
+    const hl = document.getElementById('highlight');
+    let ctx, node;
+
+const LOADER = {
+        cache: {},
+        map: null,
+        async load(names, port) {
+            if (!this.map) this.map = await fetch('https://raw.githubusercontent.com/tidalcycles/dirt-samples/master/strudel.json').then(r=>r.json());
+            
+            for(const reqKey of names) {
+                if (this.cache[reqKey]) continue;
+
+                // Split 'name:index' (e.g. "h:3" -> base="h", idx=3)
+                // If no colon, use base name and index 0
+                const [base, idxStr] = reqKey.split(':');
+                const idx = idxStr ? parseInt(idxStr) : 0;
+                
+                const entry = this.map[base];
+                if (!entry) { console.warn("Folder not found:", base); continue; }
+
+                // Retrieve path. Strudel map can be Array or Object.
+                let path;
+                if (Array.isArray(entry)) {
+                    path = entry[idx] || entry[0];
+                } else {
+                    const values = Object.values(entry);
+                    path = values[idx] || values[0];
+                }
+                
+                if (!path) { console.warn("Sample not found:", reqKey); continue; }
+                
+                try {
+                    const ab = await fetch('https://raw.githubusercontent.com/tidalcycles/dirt-samples/master/' + path).then(r=>r.arrayBuffer());
+                    const aud = await ctx.decodeAudioData(ab);
+                    this.cache[reqKey] = true;
+                    // Send back with the original requested key (e.g., "h:3")
+                    port.postMessage({ type: 'sample', name: reqKey, buf: { data: aud.getChannelData(0), sr: aud.sampleRate, len: aud.length }});
+                } catch(e) { console.error("Sample load error:", e); }
+            }
+        }
+    };
+
+    function renderHighlights(ranges) {
+        if (!Array.isArray(ranges) || ranges.length === 0) {
+            hl.innerHTML = escapeHtml(ed.value).replace(/\n/g, '<br/>');
+            return;
+        }
+        const text = ed.value;
+        let html = '', lastPos = 0;
+        ranges.filter(r => r.e > r.s).sort((a, b) => a.s - b.s).forEach(r => {
+            if (r.s < lastPos) return;
+            html += escapeHtml(text.substring(lastPos, r.s));
+            html += `<span class="active">${escapeHtml(text.substring(r.s, r.e))}</span>`;
+            lastPos = r.e;
+        });
+        html += escapeHtml(text.substring(lastPos));
+        hl.innerHTML = html.replace(/\n/g, '<br/>') + (text.endsWith('\n') ? '<br/>&nbsp;' : '');
+    }
+
+    function escapeHtml(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+    ed.addEventListener('scroll', () => hl.scrollTop = ed.scrollTop);
+    ed.addEventListener('input', () => {
+        hl.innerHTML = escapeHtml(ed.value).replace(/\n/g, '<br/>');
+        if(node) node.port.postMessage(ed.value);
+    });
+
+    ed.addEventListener('keydown', e => {
+        if (e.shiftKey && e.key === 'Enter') { 
+            e.preventDefault(); 
+            let s = ed.selectionStart, eIdx = ed.selectionEnd;
+            if (s === eIdx) {
+                s = ed.value.lastIndexOf('\n', s - 1) + 1;
+                eIdx = ed.value.indexOf('\n', s);
+                if (eIdx === -1) eIdx = ed.value.length;
+            }
+            const raw = ed.value.substring(s, eIdx);
+            if (raw.trim() && node) {
+                ed._evalRange = { s, e: eIdx };
+                node.port.postMessage({ type: 'eval', code: raw });
+            }
+        }
+    });
+
+    document.addEventListener('click', async () => {
+        if (ctx) return;
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        await ctx.audioWorklet.addModule('0005.js');
+        node = new AudioWorkletNode(ctx, 'fzrth-proc');
+        node.connect(ctx.destination);
+        node.port.onmessage = (e) => {
+            if (e.data.type === 'req') LOADER.load(e.data.names, node.port);
+            else if (e.data.type === 'result') {
+                const r = ed._evalRange;
+                if (r) {
+                    ed.setRangeText(e.data.code, r.s, r.e, 'end');
+                    node.port.postMessage(ed.value);
+                    hl.innerHTML = escapeHtml(ed.value).replace(/\n/g, '<br/>');
+                    ed._evalRange = null;
+                }
+            } else if (Array.isArray(e.data)) renderHighlights(e.data);
+        };
+        node.port.postMessage(ed.value);
+    }, {once:true});
+    hl.innerHTML = escapeHtml(ed.value).replace(/\n/g, '<br/>');
+</script>
+</body>
+</html>

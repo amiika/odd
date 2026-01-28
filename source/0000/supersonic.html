@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SuperSonic Spatial Synth</title>
+    <style>
+        body { 
+            margin: 0; 
+            background: #000; 
+            overflow: hidden; 
+            cursor: crosshair; 
+            font-family: monospace; 
+            color: #0f0;
+            user-select: none;
+            touch-action: none;
+        }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.8); z-index: 10;
+            cursor: pointer;
+        }
+        #info {
+            position: absolute; top: 10px; left: 10px;
+            pointer-events: none;
+            font-size: 16px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px;
+        }
+        h1 { margin: 0 0 10px 0; text-shadow: 0 0 10px #0f0; }
+        p { color: #888; }
+        .loading { color: #ff0; }
+    </style>
+</head>
+<body>
+
+    <div id="overlay">
+        <h1>CLICK TO START</h1>
+        <p id="status">SuperSonic Engine</p>
+    </div>
+    
+    <div id="info">0 Hz</div>
+    <canvas id="canvas"></canvas>
+
+    <script type="module">
+        import { SuperSonic } from "https://unpkg.com/supersonic-scsynth@0.32.0/dist/supersonic.js";
+
+        // DOM Elements
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const overlay = document.getElementById('overlay');
+        const info = document.getElementById('info');
+        const status = document.getElementById('status');
+        
+        // State
+        let width, height;
+        let sonic, audioCtx;
+        let isPlaying = false;
+        let lx = 0, ly = 0; 
+        
+        // Synth Management
+        let synthIdCounter = 3000;
+        let activeSynthId = null;
+        
+        // Configuration
+        const MIN_FREQ = 20;
+        const MAX_FREQ = 20000;
+        const SYNTH_DEF = 'sonic-pi-dark_ambience';
+
+        const init = async () => {
+            if (sonic) {
+                if (audioCtx.state === 'suspended') await audioCtx.resume();
+                overlay.style.display = 'none';
+                return;
+            }
+            
+            status.innerHTML = "Booting...";
+            status.className = "loading";
+            
+            try {
+                const Ctx = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new Ctx({ latencyHint: 'interactive' });
+                
+                sonic = new SuperSonic({
+                    audioContext: audioCtx,
+                    baseURL: 'https://unpkg.com/supersonic-scsynth@0.32.0/dist/',
+                    synthdefBaseURL: 'https://unpkg.com/supersonic-scsynth-synthdefs@latest/synthdefs/',
+                    sampleBaseURL: 'https://unpkg.com/supersonic-scsynth-samples@latest/samples/'
+                });
+
+                await sonic.init();
+                status.innerHTML = "Loading Synths...";
+                
+                // Load the synth definition
+                await sonic.loadSynthDef(SYNTH_DEF);
+                
+                overlay.style.display = 'none';
+                animate(); // Start visual loop
+                
+            } catch (e) {
+                console.error(e);
+                status.innerHTML = "Error: " + e.message;
+                status.style.color = "red";
+            }
+        };
+
+        // Resize Canvas
+        const resize = () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        };
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Helper: Frequency Calculation (Isometric)
+        const getSpatialFreq = (x, y) => {
+            const totalOctaves = Math.log2(MAX_FREQ / MIN_FREQ); 
+            const ratio = width / height;
+            
+            const octavesY = totalOctaves / (ratio + 1);
+            const octavesX = totalOctaves - octavesY;
+
+            const normX = x / width;
+            const normY = (height - y) / height; 
+
+            const octaveOffset = (octavesX * normX) + (octavesY * normY);
+            return MIN_FREQ * Math.pow(2, octaveOffset);
+        };
+        
+        // Helper: Hz to MIDI Note
+        const hzToMidi = (hz) => 69 + 12 * Math.log2(hz / 440);
+
+        // Interaction Handlers
+        overlay.addEventListener('click', init);
+
+        const start = (x, y) => {
+            if (!sonic) return;
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            
+            isPlaying = true;
+            lx = x; 
+            ly = y;
+            
+            // Use sequential counter for IDs, incrementing for every new stroke
+            synthIdCounter++;
+            activeSynthId = synthIdCounter;
+
+            const freq = getSpatialFreq(x, y);
+            const note = hzToMidi(freq);
+            
+            // Trigger synth with new ID
+            sonic.send('/s_new', SYNTH_DEF, activeSynthId, 0, 0, 
+                'note', note, 
+                'amp', 1, 
+                'attack', 0.1,
+                'sustain', 9999, // Infinite sustain while held
+                'release', 2.0,
+                'note_slide', 0.05, // Smooth pitch
+                'amp_slide', 0.1   // Smooth vol
+            );
+        };
+
+        const move = (x, y) => {
+            if (!isPlaying || !activeSynthId) return;
+            
+            // Visuals
+            ctx.beginPath();
+            ctx.moveTo(lx, ly);
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = '#0f0';
+            ctx.lineWidth = 3; 
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#0f0';
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            lx = x;
+            ly = y;
+            
+            // Audio Update
+            const freq = getSpatialFreq(x, y);
+            const note = hzToMidi(freq);
+            info.innerText = Math.round(freq) + " Hz";
+            
+            sonic.send('/n_set', activeSynthId, 'note', note);
+        };
+
+        const end = () => {
+            if (!sonic || !activeSynthId) return;
+            
+            // Capture ID for this specific note locally
+            const idToFree = activeSynthId;
+            
+            // Reset state
+            activeSynthId = null;
+            isPlaying = false;
+
+            // Ramp down volume slowly (1 second fade out)
+            sonic.send('/n_set', idToFree, 'amp_slide', 1.0, 'amp', 0); 
+            
+            setTimeout(() => {
+                sonic.send('/n_free', idToFree);
+            }, 1100);
+        };
+
+        // Event Listeners
+        window.addEventListener('mousedown', e => { start(e.clientX, e.clientY); });
+        window.addEventListener('mousemove', e => { move(e.clientX, e.clientY); });
+        window.addEventListener('mouseup', end);
+
+        window.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const t = e.touches[0];
+            start(t.clientX, t.clientY);
+        }, { passive: false });
+        window.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const t = e.touches[0];
+            move(t.clientX, t.clientY);
+        }, { passive: false });
+        window.addEventListener('touchend', end);
+
+        // Render Loop
+        const animate = () => {
+            requestAnimationFrame(animate);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, width, height);
+        };
+
+    </script>
+</body>
+</html>

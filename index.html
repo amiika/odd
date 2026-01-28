@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ODD Tutorial Series</title>
+    
+    <link id="prism-theme-link" rel="stylesheet" href="">
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/he/1.2.0/he.min.js"></script>
+
+    <style>
+        :root {
+            --bg: #000000; --text: #ffb000; --dim-text: #996600;
+            --border: #332200; --code-bg: #0a0a0a; --btn-hover: #332200;
+            --link: #ffb000;
+            --header-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        }
+        [data-theme="light"] {
+            --bg: #ffffff; --text: #1d2528; --dim-text: #5e6687;
+            --border: #898ea4; --code-bg: #f5f7ff; --btn-hover: #e0e0e0;
+            --link: #0056b3;
+        }
+
+        a { color: var(--link); text-decoration: underline; }
+        .markdown-content a { color: var(--link); }
+        a:hover {opacity: 0.8;}
+
+        body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; margin: 0; padding: 0; transition: 0.3s; }
+        
+        main { max-width: 800px; margin: 0 auto; padding: 60px 20px; }
+        
+        header { border-bottom: 2px solid var(--text); padding-bottom: 20px; margin-bottom: 40px; display: flex; justify-content: space-between; align-items: center; }
+        
+        h1, h2, h3, h4 { margin: 0; letter-spacing: 1px; font-family: var(--header-font); }
+        h1 { font-size: 1.5em; }
+
+        button { background: transparent; border: 1px solid var(--dim-text); color: var(--text); padding: 5px 15px; cursor: pointer; font-family: inherit; font-size: 12px; text-transform: uppercase; }
+        button:hover { background: var(--btn-hover); }
+
+        /* --- CSS COUNTERS & LIST STYLES --- */
+        .tutorial-list { 
+            list-style: none; 
+            padding: 0; 
+            counter-reset: tut-counter -1; /* Start at 00 */
+        }
+        
+        .tutorial-list li { 
+            display: flex; 
+            padding: 15px 0; 
+            border-bottom: 1px dashed var(--dim-text);
+            counter-increment: tut-counter;
+        }
+
+        /* The Number */
+        .tutorial-list li::before {
+            /* "0" + counter handles the leading zero logic for single digits */
+            content: "0" counter(tut-counter) ;  
+            color: var(--dim-text);
+            margin-right: 15px;
+            padding-top: 1px;
+            font-family: monospace;
+        }
+
+        /* The Title (Pushes desc to right) */
+        .file-name { 
+            font-weight: bold; 
+            cursor: pointer; 
+            color: var(--link);
+            margin-right: auto; /* Flex trick to push next item to far right */
+        }
+        .file-name:hover { text-decoration: underline; }
+        
+        #post-view { display: none; }
+        .error-msg { border: 1px solid red; color: red; padding: 20px; margin-top: 20px; }
+
+        .widget-container { margin: 40px 0; border: 1px solid var(--dim-text); background: var(--bg); position: relative; min-height: 100px; }
+
+   </style>
+</head>
+<body>
+
+<main>
+    <header>
+        <h1 id="page-title">ODD TUTORIALS</h1>
+        <button id="theme-toggle">[ LIGHT MODE ]</button>
+    </header>
+
+    <div id="index-view">
+        <p>Esoteric creative coding tutorials. Pretty strange and ugly short. Hacky, minimalistic and opionated. Lost, found and stolen onions.</p>
+        <ol class="tutorial-list" id="list-container"></ol>
+    </div>
+
+    <div id="post-view">
+        <div id="md-container" class="markdown-content"></div>
+    </div>
+</main>
+
+<script>
+    // --- DATA ---
+    const TUTORIALS = [
+        { id: '0000', title: 'Isometric Frequency Map', desc: 'Exploration on alternative pitch spaces' },
+        { id: '0001', title: 'FZRTH boilerplate', desc: 'AudioWorklet Setup' },
+        { id: '0002', title: 'Stack operators', desc: 'Basic operators & Musical structures' },
+        { id: '0003', title: 'Samples and Mininotation', desc: 'Loading and using samples' },
+        { id: '0004', title: 'Visualizing the FZRTH', desc: 'Visualize and evaluate FZRTH code' },
+        { id: '0005', title: 'Sample level manipulation', desc: 'Live coding synthetizer' },
+        { id: '0006', title: 'Live bytebeat', desc: 'What is bytebeat?'},
+    ];
+
+    let currentProcessorCode = null; 
+
+    marked.use({
+            renderer: {
+                link({ href, title, text }) {
+                    const isExternal = /^https?:\/\//.test(href);
+                    const target = isExternal ? ' target="_blank" rel="noopener noreferrer"' : '';
+                    return `<a href="${href}"${target}>${text}</a>`;
+                },
+                code({ text, lang }) {
+                    const safeCode = he.encode(text);
+                    if (['fzrth', 'pitchspace', 'bytebeat'].includes(lang)) {
+                        return `<div class="widget-loader" data-widget="${lang}" data-code="${safeCode}"></div>`;
+                    }
+                    return `<pre class="language-${lang || 'plaintext'}"><code class="language-${lang || 'plaintext'}">${safeCode}</code></pre>`;
+                }
+            }
+        });
+
+    // --- APP LOGIC ---
+    const listContainer = document.getElementById('list-container');
+    const mdContainer = document.getElementById('md-container');
+    const indexView = document.getElementById('index-view');
+    const postView = document.getElementById('post-view');
+
+    // JS Logic simplified: CSS handles numbering and layout now
+    TUTORIALS.forEach(tut => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+            <span class="file-name" style="${tut.disabled?'opacity:0.5':''}">${tut.title}</span>
+            <span style="color:var(--dim-text)">${tut.desc}</span>`;
+            
+        if(!tut.disabled) li.onclick = () => loadTutorial(tut.id);
+        listContainer.appendChild(li);
+    });
+
+    async function loadTutorial(id) {
+        mdContainer.innerHTML = 'Loading...';
+        showPost();
+        currentProcessorCode = null;
+
+        try {
+            const [mdRes, jsRes] = await Promise.all([
+                fetch(`source/${id}/${id}.md`),
+                fetch(`source/${id}/${id}.js`)
+            ]);
+
+            if(!mdRes.ok) throw new Error(`Markdown file not found at source/${id}/${id}.md`);
+            const mdText = await mdRes.text();
+
+            if(jsRes.ok) {
+                currentProcessorCode = await jsRes.text();
+            }
+
+            mdContainer.innerHTML = marked.parse(mdText);
+            if(window.Prism) Prism.highlightAllUnder(mdContainer);
+            
+            loadWidgets();
+
+        } catch(e) {
+            mdContainer.innerHTML = `<div class="error-msg">Error: ${e.message}<br/>(Ensure your folder structure is /source/${id}/${id}...)</div>`;
+        }
+    }
+
+    async function loadWidgets() {
+        const loaders = document.querySelectorAll('.widget-loader');
+        
+        for (const el of loaders) {
+            const widgetName = el.getAttribute('data-widget');
+            const code = el.getAttribute('data-code');
+            
+            try {
+                const module = await import(`./widgets/${widgetName}.js`);
+                const container = document.createElement('div');
+                container.className = 'widget-container';
+                el.replaceWith(container);
+                module.mount(container, code, currentProcessorCode);
+
+            } catch(e) {
+                console.error(`Failed to load widget: ${widgetName}`, e);
+                el.innerHTML = `<div style="color:red; border:1px solid red; padding:10px;">Widget Error: ${widgetName} missing</div>`;
+            }
+        }
+    }
+
+    function showPost() { indexView.style.display='none'; postView.style.display='block'; window.scrollTo(0,0); }
+    function showIndex() { postView.style.display='none'; indexView.style.display='block'; mdContainer.innerHTML=''; }
+
+    // --- THEME ---
+    const toggle = document.getElementById('theme-toggle');
+    const themeLink = document.getElementById('prism-theme-link');
+    const themes = { dark: 'dark.css', light: 'light.css' };
+    
+    toggle.onclick = () => setTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+    
+    function setTheme(mode) {
+        document.documentElement.setAttribute('data-theme', mode === 'light' ? 'light' : '');
+        themeLink.href = themes[mode];
+        toggle.innerText = mode === 'light' ? '[ DARK MODE ]' : '[ LIGHT MODE ]';
+        localStorage.setItem('theme', mode);
+    }
+    setTheme(localStorage.getItem('theme') || 'dark');
+
+</script>
+</body>
+</html>

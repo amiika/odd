@@ -1,0 +1,14 @@
+# General
+.DS_Store
+__MACOSX/
+.AppleDouble
+.LSOverride
+Icon[]
+._*
+
+# Editor/IDE
+.idea/
+.vscode/
+
+# Ignore
+ignore/

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FZRTH</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { background: #000; color: #fb0; font-family: monospace; display: flex; flex-direction: column; height: 100vh; margin: 0; overflow: hidden; }
+        #editor { flex: 1; background: #000; color: #fb0; border: none; padding: 20px; font-size: 20px; outline: none; resize: none; width: 100%; box-sizing: border-box; }
+        .header { font-size: 24px; padding: 15px; border-bottom: 1px solid #fb0; display: flex; justify-content: space-between; align-items: center; background: #111;}
+        ::selection { background: #fb0; color: #000; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>FZRTH</div>
+    </div>
+    <textarea id="editor" spellcheck="false">100 200 300 400 sine</textarea>
+    <script>
+        const editor = document.getElementById('editor');
+        let audioCtx;
+        let node;
+        async function init() {
+            if (audioCtx) return;
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                await audioCtx.audioWorklet.addModule('0001.js');
+                node = new AudioWorkletNode(audioCtx, 'fzrth-proc');
+                node.connect(audioCtx.destination);
+                editor.addEventListener('input', () => node.port.postMessage(editor.value));
+                node.port.postMessage(editor.value);         
+            } catch (e) {
+                console.error("AudioWorklet Error:", e);
+            }
+        }
+        document.addEventListener('click', init, { once: true });
+    </script>
+</body>
+</html>

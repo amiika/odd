@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FZRTH - 0003</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { background: #000; color: #fb0; font-family: monospace; display: flex; flex-direction: column; height: 100vh; margin: 0; overflow: hidden; }
+        #editor { flex: 1; background: #000; color: #fb0; border: none; padding: 20px; font-size: 20px; outline: none; resize: none; width: 100%; box-sizing: border-box; }
+        .header { font-size: 24px; padding: 15px; border-bottom: 1px solid #fb0; display: flex; justify-content: space-between; align-items: center; background: #111;}
+        .status { font-size: 14px; color: #666; cursor: pointer; }
+        .active { color: #fb0; }
+        ::selection { background: #fb0; color: #000; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>FZRTH</div>
+        <div id="status" class="status">CLICK TO START</div>
+    </div>
+
+    <textarea id="editor" spellcheck="false">
+120 bpm
+
+: beat [ bd <sd <hh h:4>> ] play ;
+
+beat</textarea>
+
+<script>
+    const editor = document.getElementById('editor');
+    const status = document.getElementById('status'); 
+    let audioCtx, node;
+
+    const LOADER = {
+        cache: {},
+        map: null,
+        async load(names, port) {
+            if (!this.map) this.map = await fetch('https://raw.githubusercontent.com/tidalcycles/dirt-samples/master/strudel.json').then(r=>r.json());
+            
+            for(const reqKey of names) {
+                if (this.cache[reqKey]) continue;
+
+                // Split 'name:index' (e.g. "h:3" -> base="h", idx=3)
+                // If no colon, use base name and index 0
+                const [base, idxStr] = reqKey.split(':');
+                const idx = idxStr ? parseInt(idxStr) : 0;
+                
+                const entry = this.map[base];
+                if (!entry) { console.warn("Folder not found:", base); continue; }
+
+                // Retrieve path. Strudel map can be Array or Object.
+                let path;
+                if (Array.isArray(entry)) {
+                    path = entry[idx] || entry[0];
+                } else {
+                    const values = Object.values(entry);
+                    path = values[idx] || values[0];
+                }
+                
+                if (!path) { console.warn("Sample not found:", reqKey); continue; }
+                
+                try {
+                    const ab = await fetch('https://raw.githubusercontent.com/tidalcycles/dirt-samples/master/' + path).then(r=>r.arrayBuffer());
+                    const aud = await audioCtx.decodeAudioData(ab);
+                    this.cache[reqKey] = true;
+                    // Send back with the original requested key (e.g., "h:3")
+                    port.postMessage({ type: 'sample', name: reqKey, buf: { data: aud.getChannelData(0), sr: aud.sampleRate, len: aud.length }});
+                } catch(e) { console.error("Sample load error:", e); }
+            }
+        }
+    };
+
+    async function init() {
+        if (audioCtx) return;
+        if (!status) return;
+
+        try {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            status.innerText = "LOADING...";
+
+            await audioCtx.audioWorklet.addModule('0003.js');
+
+            node = new AudioWorkletNode(audioCtx, 'fzrth-proc');
+            node.connect(audioCtx.destination);
+            
+            node.port.onmessage = (e) => { 
+                if (e.data.type === 'req') LOADER.load(e.data.names, node.port); 
+            };
+            
+            editor.addEventListener('input', () => node.port.postMessage(editor.value));
+            
+            node.port.postMessage(editor.value);
+            status.innerText = "RUNNING";
+            status.classList.add('active');
+
+        } catch (e) { 
+            console.error(e); 
+            status.innerText = "ERROR";
+            status.style.color = "red";
+        }
+    }
+    
+    document.addEventListener('click', init, { once: true });
+</script>
+</body>
+</html>
